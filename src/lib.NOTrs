@@ -1,0 +1,4 @@
+#![warn(clippy::all, rust_2018_idioms)]
+
+pub use recipe_browser::RecipeBrowserApp;
+pub use scroll::Scrolling;
