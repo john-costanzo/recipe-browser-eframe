@@ -6,6 +6,7 @@ pub struct RecipeBrowserApp {
     label: String,
     recipes: Vec<RecipeGuts>,
     recipe_json: serde_json::Value,
+    selected_recipe : usize,
 
     // this how you opt-out of serialization of a member
     // #[serde(skip)]
@@ -19,6 +20,7 @@ impl Default for RecipeBrowserApp {
             label: "Hello World!".to_owned(),
             recipes: vec![],
             recipe_json: serde_json::json!(null),
+	    selected_recipe: 0,
             trace: false,
         }
     }
@@ -28,13 +30,13 @@ impl Default for RecipeBrowserApp {
 #[derive(Default)]
 #[derive(Debug)]
 struct RecipeGuts {
-    title: &str,
+    title: String,
     ingredients: serde_json::Value,
     method: serde_json::Value,
 }
 
 impl RecipeGuts {
-    pub fn new(title: &str, ingredients: serde_json::Value, method: serde_json::Value) -> Self {
+    pub fn new(title: String, ingredients: serde_json::Value, method: serde_json::Value) -> Self {
         return RecipeGuts {
             title,
             ingredients,
@@ -77,7 +79,6 @@ impl RecipeBrowserApp {
             recipe_count
         );
 
-        // // TODO: hang onto recipe_titles
         let mut recipes = Vec::new();
 
         for recipe_number in 0..recipe_count {
@@ -86,7 +87,7 @@ impl RecipeBrowserApp {
                 recipe_number, index[recipe_number]
             );
             recipes.push(RecipeGuts::new(
-                &index[recipe_number]["Title"].to_string(),
+                index[recipe_number]["Title"].to_string(),
 		// pub fn as_array(&self) -> Option<&Vec<Value>>
                 index[recipe_number]["Text"]["Ingredients"].clone(),
                 index[recipe_number]["Text"]["Method"].clone(),
@@ -104,6 +105,7 @@ impl RecipeBrowserApp {
 
         Self {
             recipe_json: rj,
+	    recipes: recipes,
             ..Default::default()
         }
 
@@ -115,18 +117,17 @@ impl RecipeBrowserApp {
     }
 }
 
-fn display_recipe_titles(ui: &mut egui::Ui, recipes: &serde_json::Value) {
-    println!("display_recipe_titles: recipes={}", recipes);
-    let index = &recipes["Index"];
-    let recipe_count: &usize = &recipes["Index"].as_array().unwrap().len();
+fn format_recipe_text(ingredients:serde_json::Value, method: serde_json::Value) -> std::string::String {
+// Given INGREDIENTS and METHOD (which are both serde_json::Value as arrays) for a string containing them.
+// TODO: format this nicer.
+    format!("{}\n{}", ingredients, method)
+}
 
-    ui.vertical(|ui| {
-	for x in 0..*recipe_count {
-	    let t = index[x]["Title"].to_string();
-            println!("display_recipe_titles: recipe {}='{}'", x, t);
-	    ui.label(t);
-	}
-    });
+fn remove_leading_and_trailing_quotes( s: std::string::String ) -> std::string::String {
+    use regex::Regex;
+    let leading_quote_re = Regex::new("^\"").unwrap();
+    let trailing_quote_re = Regex::new("\"$").unwrap();
+    leading_quote_re.replace( &(trailing_quote_re.replace( s.as_str(), "") ), "" ).to_string()
 }
 
 impl eframe::App for RecipeBrowserApp {
@@ -138,10 +139,13 @@ impl eframe::App for RecipeBrowserApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+	let mut recipe_text2 : String = "".to_string();
+    
         let Self {
             label: _,
             recipes: _recipes,
             recipe_json: recipe_json2,
+	    selected_recipe: _selected_recipe2,
             trace: _trace2,
         } = self;
 
@@ -165,21 +169,20 @@ impl eframe::App for RecipeBrowserApp {
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.heading("\nRecipe Index");
 
-            let _recipe_number: &'static str = "Recipe #";
             println!("egui::Side_Panel: recipe_json2={}", recipe_json2);
-            // let recipe_count = recipe_json2["Index"].as_array().unwrap().len();
-            // println!("egui::Side_Panel: recipe_count={}", recipe_count);
+            let recipe_count = recipe_json2["Index"].as_array().unwrap().len();
+            println!("egui::Side_Panel: recipe_count={}", recipe_count);
 
             egui::ScrollArea::new([false, true]).show(ui, |ui| {
                 ui.vertical(|ui| {
-                    // for n in 1..100 {
-                    // 	let s : &str = &[ recipe_number, &n.to_string().to_owned() ].concat();
-                    // 	if ui.link(s).clicked() {
-                    // 	    println!( "egui::Side_Panel: {}", ["The '", s , "' link was clicked."].concat() );
-                    // 	    *recipe_text2 = s.to_owned();
-                    // 	}
-                    // }
-                    display_recipe_titles(ui, recipe_json2);
+                    for n in 0..recipe_count {
+                	let s : &String = &remove_leading_and_trailing_quotes( self.recipes[ n ].title.to_owned() );
+                	if ui.link(s).clicked() {
+                	    // println!( "egui::Side_Panel: {}", ["The '", &s , "' link was clicked."].concat() );
+                	    recipe_text2 = s.to_owned();
+			    self.selected_recipe = n;
+                	}
+                    }
                 })
             });
         });
@@ -189,8 +192,8 @@ impl eframe::App for RecipeBrowserApp {
             use eframe::egui::Visuals;
 
             ui.heading("Recipe Browser");
-            // let text = format!("This is the full text of the recipe:{}", recipe_text2);
-            // ui.label(text);
+	    let selected_recipe_text : String = format_recipe_text(self.recipes[ self.selected_recipe ].ingredients.clone(), self.recipes[ self.selected_recipe ].method.clone());
+            ui.label(selected_recipe_text);
             ui.style_mut().visuals = Visuals::light();
             egui::warn_if_debug_build(ui);
         });
