@@ -16,8 +16,7 @@ pub struct RecipeBrowserApp {
 impl Default for RecipeBrowserApp {
     fn default() -> Self {
         Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
+            label: "".to_owned(),
             recipes: vec![],
             recipe_json: serde_json::json!(null),
 	    selected_recipe: 0,
@@ -31,12 +30,12 @@ impl Default for RecipeBrowserApp {
 #[derive(Debug)]
 struct RecipeGuts {
     title: String,
-    ingredients: serde_json::Value,
-    method: serde_json::Value,
+    ingredients: Vec<String>,
+    method: Vec<String>,
 }
 
 impl RecipeGuts {
-    pub fn new(title: String, ingredients: serde_json::Value, method: serde_json::Value) -> Self {
+    pub fn new(title: String, ingredients: Vec<String>, method: Vec<String>) -> Self {
         return RecipeGuts {
             title,
             ingredients,
@@ -54,16 +53,11 @@ fn load_recipes() -> serde_json::Value {
     let recipe_json: serde_json::Value =
         serde_json::from_str(&data).expect("JSON was not well-formatted");
     println!("load_recipes: Index={}\n", recipe_json["Index"]);
-    println!("load_recipes: Recipe #2={}\n", recipe_json["Index"][1]);
-    println!(
-        "load_recipes: Recipe #3's Ingredients={}\n",
-        recipe_json["Index"][2]["Ingredients"]
-    );
-
     recipe_json
 }
 
 impl RecipeBrowserApp {
+
     /// Called once before the first frame.
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let rj: serde_json::Value = load_recipes();
@@ -74,11 +68,6 @@ impl RecipeBrowserApp {
 
         let recipe_count = (*index).as_array().unwrap().len();
 
-        println!(
-            "RecipeBrowserApp::new rj[\"Index\"].recipe_count={}",
-            recipe_count
-        );
-
         let mut recipes = Vec::new();
 
         for recipe_number in 0..recipe_count {
@@ -87,9 +76,9 @@ impl RecipeBrowserApp {
                 recipe_number, index[recipe_number]
             );
             recipes.push(RecipeGuts::new(
-                index[recipe_number]["Title"].to_string(),
-                index[recipe_number]["Ingredients"].clone(),
-                index[recipe_number]["Method"].clone(),
+                remove_leading_and_trailing_quotes( index[recipe_number]["Title"].to_string() ),
+                serde_value_to_vec( index[recipe_number]["Ingredients"].clone()),
+                serde_value_to_vec( index[recipe_number]["Method"].clone()),
             ));
         }
         println!("RecipeBrowserApp::new recipes={:#?}", recipes);
@@ -113,23 +102,30 @@ impl RecipeBrowserApp {
     }
 }
 
-fn format_recipe_text(ingredients:serde_json::Value, methods: serde_json::Value) -> std::string::String {
+fn serde_value_to_vec( v :serde_json::Value ) -> Vec<String> {
+    let mut vec : Vec<String> = Vec::new();
+    for i in v.as_array().iter() {
+	for j in i.iter() {
+	    println!("serdeValueToVec: {:#}", j );
+	    vec.push( remove_leading_and_trailing_quotes( j.to_string() ) );
+	}
+    }
+    vec
+}
+
+fn format_recipe_text(ingredients:Vec<String>, methods: Vec<String>) -> std::string::String {
 // Given INGREDIENTS and METHOD (which are both serde_json::Value as arrays) for a string containing them.
 // TODO: format this nicer.
     let mut ingredients_text : String = String::from("");
-    for ingredient in ingredients.as_array().iter() {
-	for i in ingredient.iter() {
-	    println!("ingredient={:#}", i );
-	    ingredients_text += &remove_leading_and_trailing_quotes( i.to_string() );
-	}
+    for ingredient in ingredients.iter() {
+	println!("ingredient={:#}", ingredient );
+	ingredients_text += ingredient;
     }
 
     let mut method_text : String = String::from("");
-    for method in methods.as_array().iter() {
-	for m in method.iter() {
-	    println!("method={:#}", m );
-	    method_text += &remove_leading_and_trailing_quotes( m.to_string() );
-	}
+    for method in methods.iter() {
+	println!("method={:#}", method );
+	method_text += method;
     }
 
     println!( "format_recipe_text: returning [{}] [{}]", ingredients_text, method_text );
@@ -189,7 +185,7 @@ impl eframe::App for RecipeBrowserApp {
             egui::ScrollArea::new([false, true]).show(ui, |ui| {
                 ui.vertical(|ui| {
                     for n in 0..recipe_count {
-                	let s : &String = &remove_leading_and_trailing_quotes( self.recipes[ n ].title.to_owned() );
+                	let s : &String = &self.recipes[ n ].title.to_owned();
                 	if ui.link(s).clicked() {
                 	    // println!( "egui::Side_Panel: {}", ["The '", &s , "' link was clicked."].concat() );
                 	    recipe_text2 = s.to_owned();
@@ -205,7 +201,9 @@ impl eframe::App for RecipeBrowserApp {
             use eframe::egui::Visuals;
 
             ui.heading("Recipe Browser");
-	    let selected_recipe_text : String = format_recipe_text(self.recipes[ self.selected_recipe ].ingredients.clone(), self.recipes[ self.selected_recipe ].method.clone());
+	    let selected_recipe_text : String = format_recipe_text(
+		self.recipes[ self.selected_recipe ].ingredients.to_owned(),
+		self.recipes[ self.selected_recipe ].method.to_owned());
             ui.label(selected_recipe_text);
             ui.style_mut().visuals = Visuals::light();
             egui::warn_if_debug_build(ui);
