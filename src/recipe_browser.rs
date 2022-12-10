@@ -57,7 +57,7 @@ fn load_recipes() -> serde_json::Value {
     println!("load_recipes: Recipe #2={}\n", recipe_json["Index"][1]);
     println!(
         "load_recipes: Recipe #3's Ingredients={}\n",
-        recipe_json["Index"][2]["Text"]["Ingredients"]
+        recipe_json["Index"][2]["Ingredients"]
     );
 
     recipe_json
@@ -88,17 +88,13 @@ impl RecipeBrowserApp {
             );
             recipes.push(RecipeGuts::new(
                 index[recipe_number]["Title"].to_string(),
-		// pub fn as_array(&self) -> Option<&Vec<Value>>
-                index[recipe_number]["Text"]["Ingredients"].clone(),
-                index[recipe_number]["Text"]["Method"].clone(),
+                index[recipe_number]["Ingredients"].clone(),
+                index[recipe_number]["Method"].clone(),
             ));
         }
         println!("RecipeBrowserApp::new recipes={:#?}", recipes);
 
         println!("RecipeBrowserApp::new recipes[1]={:#?}", recipes[1]);
-
-        // TODO: hang onto recipe_texts
-        // let recipe_texts =
 
         // This is also where you can customized the look at feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
@@ -117,10 +113,27 @@ impl RecipeBrowserApp {
     }
 }
 
-fn format_recipe_text(ingredients:serde_json::Value, method: serde_json::Value) -> std::string::String {
+fn format_recipe_text(ingredients:serde_json::Value, methods: serde_json::Value) -> std::string::String {
 // Given INGREDIENTS and METHOD (which are both serde_json::Value as arrays) for a string containing them.
 // TODO: format this nicer.
-    format!("{}\n{}", ingredients, method)
+    let mut ingredients_text : String = String::from("");
+    for ingredient in ingredients.as_array().iter() {
+	for i in ingredient.iter() {
+	    println!("ingredient={:#}", i );
+	    ingredients_text += &remove_leading_and_trailing_quotes( i.to_string() );
+	}
+    }
+
+    let mut method_text : String = String::from("");
+    for method in methods.as_array().iter() {
+	for m in method.iter() {
+	    println!("method={:#}", m );
+	    method_text += &remove_leading_and_trailing_quotes( m.to_string() );
+	}
+    }
+
+    println!( "format_recipe_text: returning [{}] [{}]", ingredients_text, method_text );
+    format!("{}\n{}", ingredients_text, method_text)
 }
 
 fn remove_leading_and_trailing_quotes( s: std::string::String ) -> std::string::String {
