@@ -133,6 +133,7 @@ fn format_recipe_text(ingredients:Vec<String>, methods: Vec<String>) -> std::str
 }
 
 fn remove_leading_and_trailing_quotes( s: std::string::String ) -> std::string::String {
+    // Given a String S, remove leading and trailing double quotes and return that string.
     use regex::Regex;
     let leading_quote_re = Regex::new("^\"").unwrap();
     let trailing_quote_re = Regex::new("\"$").unwrap();
@@ -175,7 +176,7 @@ impl eframe::App for RecipeBrowserApp {
             });
         });
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
+        egui::SidePanel::left("left_side_panel").show(ctx, |ui| {
             ui.heading("\nRecipe Index");
 
             println!("egui::Side_Panel: recipe_json2={}", recipe_json2);
@@ -187,10 +188,21 @@ impl eframe::App for RecipeBrowserApp {
                     for n in 0..recipe_count {
                 	let s : &String = &self.recipes[ n ].title.to_owned();
                 	if ui.link(s).clicked() {
-                	    // println!( "egui::Side_Panel: {}", ["The '", &s , "' link was clicked."].concat() );
                 	    recipe_text2 = s.to_owned();
 			    self.selected_recipe = n;
                 	}
+                    }
+                })
+            });
+        });
+
+        egui::SidePanel::right("right_side_panel").show(ctx, |ui| {
+            ui.heading("\nRecipe Ingredients");
+
+            egui::ScrollArea::new([false, true]).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    if ui.link("Whateva").clicked() {
+			println!("right panel whateva")
                     }
                 })
             });
@@ -200,7 +212,7 @@ impl eframe::App for RecipeBrowserApp {
             // The central panel the region left after adding TopPanel's and SidePanel's
             use eframe::egui::Visuals;
 
-            ui.heading("Recipe Browser");
+            ui.heading("Recipe Method");
 	    let selected_recipe_text : String = format_recipe_text(
 		self.recipes[ self.selected_recipe ].ingredients.to_owned(),
 		self.recipes[ self.selected_recipe ].method.to_owned());
