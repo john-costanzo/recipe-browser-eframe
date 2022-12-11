@@ -5,8 +5,10 @@
 pub struct RecipeBrowserApp {
     label: String,
     recipes: Vec<RecipeGuts>,
-    recipe_json: serde_json::Value,
     selected_recipe : usize,
+    ingredients_checked: Vec<bool>,
+    methods_checked: Vec<bool>,
+    recipe_is_selected: bool,
 
     // this how you opt-out of serialization of a member
     // #[serde(skip)]
@@ -18,8 +20,10 @@ impl Default for RecipeBrowserApp {
         Self {
             label: "".to_owned(),
             recipes: vec![],
-            recipe_json: serde_json::json!(null),
 	    selected_recipe: 0,
+	    ingredients_checked: vec![],
+	    methods_checked: vec![],
+	    recipe_is_selected: false,
             trace: false,
         }
     }
@@ -31,28 +35,28 @@ impl Default for RecipeBrowserApp {
 struct RecipeGuts {
     title: String,
     ingredients: Vec<String>,
-    method: Vec<String>,
+    methods: Vec<String>,
 }
 
 impl RecipeGuts {
-    pub fn new(title: String, ingredients: Vec<String>, method: Vec<String>) -> Self {
+    pub fn new(title: String, ingredients: Vec<String>, methods: Vec<String>) -> Self {
         return RecipeGuts {
             title,
             ingredients,
-            method,
+            methods,
         };
     }
 }
 
-fn load_recipes() -> serde_json::Value {
+fn load_recipes( trace: bool ) -> serde_json::Value {
     use std::fs;
 
     let data = fs::read_to_string("/home/jncostanzo/git-repos/recipe-browser-eframe/recipe-browser-eframe/assets/recipes.json").expect("Unable to read file");
-    println!("load_recipes: ../assets/recipes.json:\n{}", data);
+    if trace { println!("load_recipes: ../assets/recipes.json:\n{}", data); }
 
     let recipe_json: serde_json::Value =
         serde_json::from_str(&data).expect("JSON was not well-formatted");
-    println!("load_recipes: Index={}\n", recipe_json["Index"]);
+    if trace { println!("load_recipes: Index={}\n", recipe_json["Index"]); }
     recipe_json
 }
 
@@ -60,36 +64,38 @@ impl RecipeBrowserApp {
 
     /// Called once before the first frame.
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let rj: serde_json::Value = load_recipes();
-        println!("RecipeBrowserApp::new rj={}", rj);
+	let trace = false;
+        let rj: serde_json::Value = load_recipes( trace );
+        if trace { println!("RecipeBrowserApp::new rj={}", rj); }
 
         let index = &rj["Index"];
-        println!("RecipeBrowserApp::new rj[\"Index\"]={}", *index);
+        if trace { println!("RecipeBrowserApp::new rj[\"Index\"]={}", *index); }
 
         let recipe_count = (*index).as_array().unwrap().len();
 
         let mut recipes = Vec::new();
 
         for recipe_number in 0..recipe_count {
-            println!(
-                "RecipeBrowserApp::new: recipe #{}='{}'",
-                recipe_number, index[recipe_number]
-            );
+            if trace {
+		println!(
+                    "RecipeBrowserApp::new: recipe #{}='{}'",
+                    recipe_number, index[recipe_number]
+		);
+	    }
             recipes.push(RecipeGuts::new(
                 remove_leading_and_trailing_quotes( index[recipe_number]["Title"].to_string() ),
-                serde_value_to_vec( index[recipe_number]["Ingredients"].clone()),
-                serde_value_to_vec( index[recipe_number]["Method"].clone()),
+                serde_value_to_vec( index[recipe_number]["Ingredients"].clone(), trace ),
+                serde_value_to_vec( index[recipe_number]["Method"].clone(), trace ),
             ));
         }
-        println!("RecipeBrowserApp::new recipes={:#?}", recipes);
+        if trace { println!("RecipeBrowserApp::new recipes={:#?}", recipes); }
 
-        println!("RecipeBrowserApp::new recipes[1]={:#?}", recipes[1]);
+        if trace { println!("RecipeBrowserApp::new recipes[1]={:#?}", recipes[1]); }
 
         // This is also where you can customized the look at feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
         Self {
-            recipe_json: rj,
 	    recipes: recipes,
             ..Default::default()
         }
@@ -102,34 +108,15 @@ impl RecipeBrowserApp {
     }
 }
 
-fn serde_value_to_vec( v :serde_json::Value ) -> Vec<String> {
+fn serde_value_to_vec( v :serde_json::Value, trace: bool ) -> Vec<String> {
     let mut vec : Vec<String> = Vec::new();
     for i in v.as_array().iter() {
 	for j in i.iter() {
-	    println!("serdeValueToVec: {:#}", j );
+	    if trace { println!("serdeValueToVec: {:#}", j ); }
 	    vec.push( remove_leading_and_trailing_quotes( j.to_string() ) );
 	}
     }
     vec
-}
-
-fn format_recipe_text(ingredients:Vec<String>, methods: Vec<String>) -> std::string::String {
-// Given INGREDIENTS and METHOD (which are both serde_json::Value as arrays) for a string containing them.
-// TODO: format this nicer.
-    let mut ingredients_text : String = String::from("");
-    for ingredient in ingredients.iter() {
-	println!("ingredient={:#}", ingredient );
-	ingredients_text += ingredient;
-    }
-
-    let mut method_text : String = String::from("");
-    for method in methods.iter() {
-	println!("method={:#}", method );
-	method_text += method;
-    }
-
-    println!( "format_recipe_text: returning [{}] [{}]", ingredients_text, method_text );
-    format!("{}\n{}", ingredients_text, method_text)
 }
 
 fn remove_leading_and_trailing_quotes( s: std::string::String ) -> std::string::String {
@@ -149,15 +136,19 @@ impl eframe::App for RecipeBrowserApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+	use egui::{Color32,RichText};
+
 	let mut recipe_text2 : String = "".to_string();
-    
-        let Self {
-            label: _,
-            recipes: _recipes,
-            recipe_json: recipe_json2,
-	    selected_recipe: _selected_recipe2,
-            trace: _trace2,
-        } = self;
+	
+        // let Self {
+        //     label: _,
+        //     recipes: _recipes,
+	//     selected_recipe: _selected_recipe2,
+	//     ingredients_checked: _ingredients_checked,
+	//     methods_checked: _methods_checked,
+	//     recipe_is_selected: _recipe_is_selected,
+        //     trace: _trace2,
+        // } = self;
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -177,48 +168,73 @@ impl eframe::App for RecipeBrowserApp {
         });
 
         egui::SidePanel::left("left_side_panel").show(ctx, |ui| {
-            ui.heading("\nRecipe Index");
+            ui.heading("Index");
 
-            println!("egui::Side_Panel: recipe_json2={}", recipe_json2);
-            let recipe_count = recipe_json2["Index"].as_array().unwrap().len();
-            println!("egui::Side_Panel: recipe_count={}", recipe_count);
+            let recipe_count = self.recipes.len();
+            if self.trace { println!("egui::Side_Panel: recipe_count={}", recipe_count); }
 
-            egui::ScrollArea::new([false, true]).show(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.vertical(|ui| {
                     for n in 0..recipe_count {
                 	let s : &String = &self.recipes[ n ].title.to_owned();
                 	if ui.link(s).clicked() {
                 	    recipe_text2 = s.to_owned();
 			    self.selected_recipe = n;
+			    self.ingredients_checked = vec![ false; self.recipes[ self.selected_recipe ].ingredients.len()];
+			    self.methods_checked = vec![ false; self.recipes[ self.selected_recipe ].methods.len() ];
+			    self.recipe_is_selected = true;
                 	}
                     }
-                })
+                });
+		ui.set_min_width(128.0);
             });
         });
 
         egui::SidePanel::right("right_side_panel").show(ctx, |ui| {
-            ui.heading("\nRecipe Ingredients");
+            ui.heading("Ingredients");
 
-            egui::ScrollArea::new([false, true]).show(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.vertical(|ui| {
-                    if ui.link("Whateva").clicked() {
-			println!("right panel whateva")
-                    }
-                })
+		    if self.recipe_is_selected {
+			let len = self.recipes[ self.selected_recipe ].ingredients.len();
+			for i in 0..len {
+			    let ingredient = RichText::new(self.recipes[ self.selected_recipe ].ingredients[ i ].to_owned());
+			    let color = if self.ingredients_checked[ i ] { Color32::GRAY } else { Color32::BLACK };
+			    let mut rich_ingredients = ingredient.color(color);
+			    if self.ingredients_checked[ i ] {
+				rich_ingredients = rich_ingredients.italics();
+			    }
+			    ui.checkbox( &mut self.ingredients_checked[ i ], rich_ingredients );
+			}
+		    }
+                });
+		ui.set_min_width(160.0);
             });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
-            use eframe::egui::Visuals;
+	    ui.heading("Method");
 
-            ui.heading("Recipe Method");
-	    let selected_recipe_text : String = format_recipe_text(
-		self.recipes[ self.selected_recipe ].ingredients.to_owned(),
-		self.recipes[ self.selected_recipe ].method.to_owned());
-            ui.label(selected_recipe_text);
-            ui.style_mut().visuals = Visuals::light();
-            egui::warn_if_debug_build(ui);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.vertical(|ui| {
+		    if self.recipe_is_selected {
+			let len = self.recipes[ self.selected_recipe ].methods.len();
+			for m in 0..len {
+			    let method = RichText::new(self.recipes[ self.selected_recipe ].methods[ m ].to_owned() );
+			    let color = if self.methods_checked[ m ] { Color32::GRAY } else { Color32::BLACK };
+			    let mut rich_method = method.color(color);
+			    if self.methods_checked[ m ] {
+				rich_method = rich_method.italics();
+			    }
+			    ui.checkbox( &mut self.methods_checked[ m ], rich_method );
+			}
+		    }
+		});
+		ui.set_min_width(320.0);
+	    });
+	    ctx.set_visuals(egui::Visuals::light());
+	    //            egui::warn_if_debug_build(ui);
         });
     }
 }
