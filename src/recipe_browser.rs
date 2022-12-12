@@ -178,6 +178,7 @@ impl eframe::App for RecipeBrowserApp {
                     for n in 0..recipe_count {
                 	let s : &String = &self.recipes[ n ].title.to_owned();
                 	if ui.link(s).clicked() {
+
                 	    recipe_text2 = s.to_owned();
 			    self.selected_recipe = n;
 			    self.ingredients_checked = vec![ false; self.recipes[ self.selected_recipe ].ingredients.len()];
