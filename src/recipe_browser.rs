@@ -4,9 +4,11 @@ use std::collections::HashMap;
 #[derive(Debug)]
 /// Represent a recipe.
 pub struct Recipe {
-    /// A recipe must have a title, a list of ingredients and a list of methods.
+    /// A recipe must have a title, 
     title: String,
+    /// ...a list of ingredients and
     ingredients: Vec< String >,
+    /// a list of methods.
     methods: Vec< String >
 }
 
