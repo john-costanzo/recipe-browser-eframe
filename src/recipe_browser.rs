@@ -1,25 +1,95 @@
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
+use std::collections::HashMap;
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
+/// Represent a recipe.
+pub struct Recipe {
+    /// A recipe must have a title, a list of ingredients and a list of methods.
+    title: String,
+    ingredients: Vec< String >,
+    methods: Vec< String >
+}
+
+type RecipeIndex = HashMap< String, Vec<i32> >;
+type RecipeDetails = Vec< Recipe >;
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
+/// Represent an indexed set of recipes.
+pub struct Recipes {
+    index: RecipeIndex,
+    recipe_details: RecipeDetails
+}
+
+impl Recipes {
+    /// Return a new (empty) recipe collection.
+    ///
+    /// No arguments.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // Create a new (empty) recipe collection.
+    /// let recipe = Recipes::new();
+    fn new() -> Self {
+        Self {
+            index: HashMap::new(),
+            recipe_details: vec![],
+        }
+    }
+
+    /// Return the number of recipes in this object.
+    ///
+    /// No arguments.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // Determine the number of recipes in a recipe collection.
+    /// let recipe_count = recipes.len();
+    pub fn len(&mut self) -> usize {
+	self.recipe_details.len()
+    }
+}
+
+// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 
+/// Represent the state of the Recipe Browser app.
 pub struct RecipeBrowserApp {
-    label: String,
-    recipes: Vec<RecipeGuts>,
-    selected_recipe : usize,
-    ingredients_checked: Vec<bool>,
-    methods_checked: Vec<bool>,
+    /// The recipes themselves, along with their index.
+    recipes: Recipes,  
+    /// The ordinal number of the selected recipe.
+    selected_recipe : usize, 
+    /// Which ingredients have been checked.
+    ingredients_checked: Vec<bool>, 
+    /// Which methods have been checked.
+    methods_checked: Vec<bool>, 
+    /// Has any recipe been selected?
     recipe_is_selected: bool,
 
     // this how you opt-out of serialization of a member
     // #[serde(skip)]
+    /// Should we trace lifetime events dealing with this object?
     trace: bool,
 }
 
 impl Default for RecipeBrowserApp {
+    /// A default contstructor.
+    ///
+    /// Return a new (empty) `RecipeBrowserApp`
+    ///
+    /// No arguments.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // Create a new (empty) RecipeBrowserApp.
+    /// let app = RecipeBrowserApp:default();
     fn default() -> Self {
         Self {
-            label: "".to_owned(),
-            recipes: vec![],
+            recipes: Recipes::new(),
 	    selected_recipe: 0,
 	    ingredients_checked: vec![],
 	    methods_checked: vec![],
@@ -29,35 +99,33 @@ impl Default for RecipeBrowserApp {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
-#[derive(Default)]
-#[derive(Debug)]
-struct RecipeGuts {
-    title: String,
-    ingredients: Vec<String>,
-    methods: Vec<String>,
-}
-
-impl RecipeGuts {
-    pub fn new(title: String, ingredients: Vec<String>, methods: Vec<String>) -> Self {
-        return RecipeGuts {
-            title,
-            ingredients,
-            methods,
-        };
-    }
-}
-
-fn load_recipes( trace: bool ) -> serde_json::Value {
-    use std::fs;
-
-    let data = fs::read_to_string("/home/jncostanzo/git-repos/recipe-browser-eframe/recipe-browser-eframe/assets/recipes.json").expect("Unable to read file");
-    if trace { println!("load_recipes: ../assets/recipes.json:\n{}", data); }
-
-    let recipe_json: serde_json::Value =
-        serde_json::from_str(&data).expect("JSON was not well-formatted");
-    if trace { println!("load_recipes: Index={}\n", recipe_json["Index"]); }
-    recipe_json
+    /// Load recipes into the application.
+    ///
+    /// GET the contents of a URL (expected to be in JSON), parse it and return an instance of `Recipes`.
+    ///
+    /// The function accepts 2 arguments:
+    ///
+    /// * `recipes_url`   The URL to use for GETting the JSON file.
+    /// * `trace`         Whether to trace the running of this function.
+    ///
+    ///
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // Load recipes
+    /// let recipes = load_recipes( "https://some.site.com/recipes.json", false );
+async fn load_recipes( recipes_url: String, trace: bool ) -> Result< Recipes, Box<dyn std::error::Error> > {
+    if trace { println!("load_recipes: Starting..."); }
+    let client = reqwest::Client::new();
+    if trace { println!("load_recipes: About to get {}", recipes_url); }
+    let data = client.get( recipes_url.to_owned() ).send()
+        .await?
+        .json::<Recipes>()
+        .await?;
+    
+    if trace { println!("load_recipes: {}:\n{:#?}", recipes_url, data); }
+    Ok( data )
 }
 
 impl RecipeBrowserApp {
@@ -65,66 +133,41 @@ impl RecipeBrowserApp {
     /// Called once before the first frame.
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
 	let trace = false;
-        let rj: serde_json::Value = load_recipes( trace );
-        if trace { println!("RecipeBrowserApp::new rj={}", rj); }
-
-        let index = &rj["Index"];
-        if trace { println!("RecipeBrowserApp::new rj[\"Index\"]={}", *index); }
-
-        let recipe_count = (*index).as_array().unwrap().len();
-
-        let mut recipes = Vec::new();
-
-        for recipe_number in 0..recipe_count {
-            if trace {
-		println!(
-                    "RecipeBrowserApp::new: recipe #{}='{}'",
-                    recipe_number, index[recipe_number]
-		);
-	    }
-            recipes.push(RecipeGuts::new(
-                remove_leading_and_trailing_quotes( index[recipe_number]["Title"].to_string() ),
-                serde_value_to_vec( index[recipe_number]["Ingredients"].clone(), trace ),
-                serde_value_to_vec( index[recipe_number]["Method"].clone(), trace ),
-            ));
-        }
-        if trace { println!("RecipeBrowserApp::new recipes={:#?}", recipes); }
-
-        if trace { println!("RecipeBrowserApp::new recipes[1]={:#?}", recipes[1]); }
+	if trace { println!("RecipeBrowserApp::new() starting..."); }
 
         // This is also where you can customized the look at feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
+	let mut recipes : Recipes = Recipes::new();
+	let recipes_url :String = "https://raw.githubusercontent.com/john-costanzo/recipes/master/recipes.json".to_string(); // TODO: it would be nice if this were a const!
+	if trace { println!("RecipeBrowserApp::new() about to call load_recipes; recipes={:#?}...",recipes); }
+
+	let trt = tokio::runtime::Runtime::new().unwrap();
+
+	let load_recipe_async_block = async {
+	    match load_recipes( recipes_url, trace ).await {
+		Ok(r) => {
+		    recipes = r;
+		    if trace { println!( "RecipeBrowserApp::new() back from load_recipes; recipes={:#?}...", recipes ); }
+		},
+		Err(e) => {
+		    println!("load_recipes: Error loading file {:#?}", e );
+		}
+	    };
+	};
+	trt.block_on( load_recipe_async_block );
+
         Self {
 	    recipes: recipes,
-            ..Default::default()
+	    ..Default::default()
         }
-
+	
         // // Load previous app state (if any).
         // // Note that you must enable the `persistence` feature for this to work.
         // if let Some(storage) = cc.storage {
         //     return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         // };
     }
-}
-
-fn serde_value_to_vec( v :serde_json::Value, trace: bool ) -> Vec<String> {
-    let mut vec : Vec<String> = Vec::new();
-    for i in v.as_array().iter() {
-	for j in i.iter() {
-	    if trace { println!("serdeValueToVec: {:#}", j ); }
-	    vec.push( remove_leading_and_trailing_quotes( j.to_string() ) );
-	}
-    }
-    vec
-}
-
-fn remove_leading_and_trailing_quotes( s: std::string::String ) -> std::string::String {
-    // Given a String S, remove leading and trailing double quotes and return that string.
-    use regex::Regex;
-    let leading_quote_re = Regex::new("^\"").unwrap();
-    let trailing_quote_re = Regex::new("\"$").unwrap();
-    leading_quote_re.replace( &(trailing_quote_re.replace( s.as_str(), "") ), "" ).to_string()
 }
 
 impl eframe::App for RecipeBrowserApp {
@@ -140,15 +183,6 @@ impl eframe::App for RecipeBrowserApp {
 
 	let mut recipe_text2 : String = "".to_string();
 	
-        // let Self {
-        //     label: _,
-        //     recipes: _recipes,
-	//     selected_recipe: _selected_recipe2,
-	//     ingredients_checked: _ingredients_checked,
-	//     methods_checked: _methods_checked,
-	//     recipe_is_selected: _recipe_is_selected,
-        //     trace: _trace2,
-        // } = self;
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -176,13 +210,13 @@ impl eframe::App for RecipeBrowserApp {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.vertical(|ui| {
                     for n in 0..recipe_count {
-                	let s : &String = &self.recipes[ n ].title.to_owned();
+                	let s : &String = &self.recipes.recipe_details[ n ].title.to_owned();
                 	if ui.link(s).clicked() {
 
                 	    recipe_text2 = s.to_owned();
 			    self.selected_recipe = n;
-			    self.ingredients_checked = vec![ false; self.recipes[ self.selected_recipe ].ingredients.len()];
-			    self.methods_checked = vec![ false; self.recipes[ self.selected_recipe ].methods.len() ];
+			    self.ingredients_checked = vec![ false; self.recipes.recipe_details[ self.selected_recipe ].ingredients.len()];
+			    self.methods_checked = vec![ false; self.recipes.recipe_details[ self.selected_recipe ].methods.len() ];
 			    self.recipe_is_selected = true;
                 	}
                     }
@@ -197,9 +231,9 @@ impl eframe::App for RecipeBrowserApp {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.vertical(|ui| {
 		    if self.recipe_is_selected {
-			let len = self.recipes[ self.selected_recipe ].ingredients.len();
+			let len = self.recipes.recipe_details[ self.selected_recipe ].ingredients.len();
 			for i in 0..len {
-			    let ingredient = RichText::new(self.recipes[ self.selected_recipe ].ingredients[ i ].to_owned());
+			    let ingredient = RichText::new(self.recipes.recipe_details[ self.selected_recipe ].ingredients[ i ].to_owned());
 			    let color = if self.ingredients_checked[ i ] { Color32::GRAY } else { Color32::BLACK };
 			    let mut rich_ingredients = ingredient.color(color);
 			    if self.ingredients_checked[ i ] {
@@ -220,9 +254,9 @@ impl eframe::App for RecipeBrowserApp {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.vertical(|ui| {
 		    if self.recipe_is_selected {
-			let len = self.recipes[ self.selected_recipe ].methods.len();
+			let len = self.recipes.recipe_details[ self.selected_recipe ].methods.len();
 			for m in 0..len {
-			    let method = RichText::new(self.recipes[ self.selected_recipe ].methods[ m ].to_owned() );
+			    let method = RichText::new(self.recipes.recipe_details[ self.selected_recipe ].methods[ m ].to_owned() );
 			    let color = if self.methods_checked[ m ] { Color32::GRAY } else { Color32::BLACK };
 			    let mut rich_method = method.color(color);
 			    if self.methods_checked[ m ] {

@@ -1,4 +1,4 @@
-doit: main # wasm 
+doit: wasm # main 
 
 main: main.rs recipe_browser.rs
 	cargo build && ../target/debug/recipe_browser
